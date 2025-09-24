@@ -34,11 +34,11 @@ def generate_synthetic_data(num_houses=50, weeks=1, theft_prob=0.05, occasion="N
 
             # Occasion factor
             if occasion == "Diwali":
-                factor = 1 + 0.5*np.exp(-((hour_of_day-20)/2)**2)  # peak around 8-10 PM
+                factor = 1 + 0.5*np.exp(-((hour_of_day-20)/2)**2)
             elif occasion == "Summer":
-                factor = 1 + 0.3*np.exp(-((hour_of_day-15)/3)**2)  # peak afternoon
+                factor = 1 + 0.3*np.exp(-((hour_of_day-15)/3)**2)
             elif occasion == "Winter":
-                factor = 1 + 0.3*np.exp(-((hour_of_day-22)/2)**2)  # peak night
+                factor = 1 + 0.3*np.exp(-((hour_of_day-22)/2)**2)
             else:
                 factor = 1
 
@@ -153,6 +153,11 @@ else:  # K-Means
 features_pred = features.copy()
 
 # --------------------------
+# Shift risk scores to positive for plotting
+# --------------------------
+features_pred['risk_score_plot'] = features_pred['risk_score'] - features_pred['risk_score'].min() + 0.1
+
+# --------------------------
 # Threshold sliders
 # --------------------------
 st.sidebar.header("📊 Risk Thresholds")
@@ -179,16 +184,22 @@ features_pred['category'] = features_pred['risk_score'].apply(categorize)
 st.header("🏠 Top Suspicious Houses")
 st.markdown("Shows the 10 houses most likely stealing electricity. Taller bars = higher risk.")
 top_susp = features_pred.sort_values('risk_score', ascending=False).head(10)
-fig_bar = px.bar(top_susp, x='house_id', y='risk_score', color='risk_score', color_continuous_scale='Reds',
-                 hover_data={'house_id': True, 'risk_score': ':.2f'},
-                 title="Top 10 Suspicious Houses")
+fig_bar = px.bar(
+    top_susp,
+    x='house_id',
+    y='risk_score_plot',
+    color='risk_score_plot',
+    hover_data={'house_id': True, 'risk_score': ':.2f'},
+    color_continuous_scale='Reds',
+    title="Top 10 Suspicious Houses"
+)
 st.plotly_chart(fig_bar, use_container_width=True)
 with st.expander("Read more about this chart"):
     st.markdown("""
     **Type of chart:** Bar chart  
-    **What it shows:** Each bar represents a house. The height corresponds to its risk score (higher = more suspicious).  
-    **How to interpret:** Taller bars indicate houses that are more likely to be stealing electricity. Hover over a bar to see exact score.  
-    **Meaningful observations:** Houses that stand out significantly from the rest are high-priority for investigation.
+    **What it shows:** Each bar represents a house. Height corresponds to its risk score (higher = more suspicious).  
+    **How to interpret:** Taller bars indicate houses more likely to be stealing electricity. Hover for exact scores.  
+    **Meaningful observations:** Standout bars are high-priority for investigation.
     """)
 
 # --------------------------
@@ -196,15 +207,21 @@ with st.expander("Read more about this chart"):
 # --------------------------
 st.header("📉 Risk Score Distribution")
 st.markdown("Shows how all houses score. Colors tell if a house is Normal, Suspicious, or Highly Suspicious.")
-fig_hist = px.histogram(features_pred, x='risk_score', nbins=30, color='category',
-                        hover_data={'risk_score': ':.2f'}, title="Risk Score Distribution")
+fig_hist = px.histogram(
+    features_pred,
+    x='risk_score_plot',
+    nbins=30,
+    color='category',
+    hover_data={'risk_score': ':.2f'},
+    title="Risk Score Distribution"
+)
 st.plotly_chart(fig_hist, use_container_width=True)
 with st.expander("Read more about this chart"):
     st.markdown("""
     **Type of chart:** Histogram  
-    **What it shows:** How risk scores are distributed among all houses.  
-    **How to interpret:** Helps see if most houses are normal or if many are suspicious.  
-    **Meaningful observations:** Peaks in the red area indicate many highly suspicious houses.
+    **What it shows:** Distribution of risk scores among houses.  
+    **How to interpret:** See how many houses are normal vs. suspicious.  
+    **Meaningful observations:** Red peaks indicate many highly suspicious houses.
     """)
 
 # --------------------------
@@ -212,18 +229,23 @@ with st.expander("Read more about this chart"):
 # --------------------------
 st.header("🗺️ Zone-Level Risk Heatmap")
 st.markdown("Shows average risk per zone. Darker/redder zones have more suspicious houses.")
-zone_summary = features_pred.groupby(['zone_x','zone_y'])['risk_score'].mean().reset_index()
-fig_zone = px.density_heatmap(zone_summary, x='zone_x', y='zone_y', z='risk_score',
-                              color_continuous_scale='Reds',
-                              hover_data={'zone_x': True, 'zone_y': True, 'risk_score': ':.2f'},
-                              title="Average Risk per Zone")
+zone_summary = features_pred.groupby(['zone_x','zone_y'])['risk_score_plot'].mean().reset_index()
+fig_zone = px.density_heatmap(
+    zone_summary,
+    x='zone_x',
+    y='zone_y',
+    z='risk_score_plot',
+    color_continuous_scale='Reds',
+    hover_data={'zone_x': True, 'zone_y': True, 'risk_score_plot': ':.2f'},
+    title="Average Risk per Zone"
+)
 st.plotly_chart(fig_zone, use_container_width=True)
 with st.expander("Read more about this chart"):
     st.markdown("""
     **Type of chart:** Heatmap  
-    **What it shows:** Each cell represents a zone; color intensity = average risk.  
+    **What it shows:** Each cell = a zone; color intensity = average risk.  
     **How to interpret:** Darker/redder zones have higher-risk houses.  
-    **Meaningful observations:** Identify regions with multiple suspicious houses for targeted inspections.
+    **Meaningful observations:** Identify high-risk regions for inspections.
     """)
 
 # --------------------------
@@ -241,21 +263,31 @@ threshold_drop = house_usage['drop'].mean() + 2*house_usage['drop'].std()
 house_usage['suspicious'] = house_usage['drop'] > threshold_drop
 
 fig_line = go.Figure()
-fig_line.add_trace(go.Scatter(x=house_usage['timestamp'], y=house_usage['consumption_kwh'],
-                              mode='lines+markers', name='Consumption',
-                              hovertemplate='Hour: %{x}<br>Consumption: %{y:.2f} kWh'))
-fig_line.add_trace(go.Scatter(x=house_usage.loc[house_usage['suspicious'],'timestamp'],
-                              y=house_usage.loc[house_usage['suspicious'],'consumption_kwh'],
-                              mode='markers', name='Suspicious Drop',
-                              marker=dict(color='red', size=10),
-                              hovertemplate='Suspicious Drop<br>Hour: %{x}<br>Consumption: %{y:.2f} kWh'))
-fig_line.update_layout(title=f'Hourly Consumption for House {selected_house} (Red = Suspicious Drop)',
-                       xaxis_title='Hour', yaxis_title='kWh')
+fig_line.add_trace(go.Scatter(
+    x=house_usage['timestamp'],
+    y=house_usage['consumption_kwh'],
+    mode='lines+markers',
+    name='Consumption',
+    hovertemplate='Hour: %{x}<br>Consumption: %{y:.2f} kWh'
+))
+fig_line.add_trace(go.Scatter(
+    x=house_usage.loc[house_usage['suspicious'],'timestamp'],
+    y=house_usage.loc[house_usage['suspicious'],'consumption_kwh'],
+    mode='markers',
+    name='Suspicious Drop',
+    marker=dict(color='red', size=10),
+    hovertemplate='Suspicious Drop<br>Hour: %{x}<br>Consumption: %{y:.2f} kWh'
+))
+fig_line.update_layout(
+    title=f'Hourly Consumption for House {selected_house} (Red = Suspicious Drop)',
+    xaxis_title='Hour',
+    yaxis_title='kWh'
+)
 st.plotly_chart(fig_line, use_container_width=True)
 with st.expander("Read more about this chart"):
     st.markdown("""
     **Type of chart:** Line chart with markers  
     **What it shows:** Each point = electricity consumed in an hour. Red points = unusually large drops.  
-    **How to interpret:** Sudden drops in consumption may indicate electricity theft.  
-    **Meaningful observations:** Investigate hours with red points to understand possible tampering or anomalies.
+    **How to interpret:** Sudden drops may indicate electricity theft.  
+    **Meaningful observations:** Investigate red points to understand anomalies or tampering.
     """)
